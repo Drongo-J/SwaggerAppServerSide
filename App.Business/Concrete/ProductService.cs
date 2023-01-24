@@ -1,5 +1,6 @@
 ﻿using App.Business.Abstract;
 using App.DataAccess.Abstract;
+using App.DataAccess.Concrete.EfEntityFramework;
 using App.Entities.Concrete;
 using System;
 using System.Collections.Generic;
@@ -17,7 +18,10 @@ namespace App.Business.Concrete
         {
             _productDal = productDal;
         }
-
+        public ProductService()
+        {
+            _productDal = new EfProductDal();
+        }
         public void Add(Product product)
         {
             _productDal.Add(product);
