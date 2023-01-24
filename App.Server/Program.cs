@@ -1,4 +1,6 @@
-﻿using System;
+﻿using App.Business.Concrete;
+using App.DataAccess.Concrete.EfEntityFramework;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,6 +12,10 @@ namespace App.Server
     {
         static void Main(string[] args)
         {
+            var productService = new ProductService(new EfProductDal());
+            var products = productService.GetAll();
+            Console.ReadLine();
+
         }
     }
 }
