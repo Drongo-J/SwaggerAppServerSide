@@ -24,19 +24,27 @@ namespace App.Server
         static BinaryWriter bw = null;
         static BinaryReader br = null;
         public static List<TcpClient> Clients { get; set; }
-
+        public static Type[] GetTypesInNamespace(Assembly assembly, string nameSpace)
+        {
+            return
+              assembly.GetTypes()
+                      .Where(t => String.Equals(t.Namespace, nameSpace, StringComparison.Ordinal))
+                      .ToArray();
+        }
         static void Main(string[] args)
         {
-            var productService = new ProductService(new EfProductDal());
 
             Clients = new List<TcpClient>();
-            var ip = IPAddress.Parse("10.2.22.1");
+            var ip = IPAddress.Parse("10.2.11.19");
             var port = 27001;
 
             var ep = new IPEndPoint(ip, port);
             listener = new TcpListener(ep);
             listener.Start();
-            
+            string nspace = "App.Business.Concrete";
+            var productService = new ProductService(new EfProductDal());
+
+
             Console.WriteLine($"Listening on {listener.LocalEndpoint}");
             while (true)
             {
@@ -51,7 +59,6 @@ namespace App.Server
                         {
                             Task.Run(() =>
                             {
-                                
                                 while (true)
                                 {
                                     try
@@ -62,15 +69,20 @@ namespace App.Server
                                         var msg = br.ReadString();
                                         Console.WriteLine($"CLIENT : {client.Client.RemoteEndPoint} : {msg}");
                                         //Products/1
-                                        if (msg == @"Product\GetAll")
+
+                                        if (msg != String.Empty)
                                         {
+                                            var className = msg.Split('\\')[0];
                                             var methodName = msg.Split('\\')[1];
-                                            Type myType = typeof(ProductService);
-                                            //var methods = myType.GetMethods();
+                                            var myType = Assembly.GetAssembly(typeof(ProductService)).GetTypes()
+                                            .FirstOrDefault(a => a.FullName.Contains(className));
+
                                             var methods = myType.GetMethods();
-                                            MethodInfo myMethod = myType.GetMethod(methodName);
+                                            MethodInfo myMethod = myType.GetMethods()
+                                            .FirstOrDefault(m=>m.Name.Contains(methodName));
+
                                             object myInstance = Activator.CreateInstance(myType);
-                                            var products=myMethod.Invoke(myInstance, null);
+                                            var products = myMethod.Invoke(myInstance, null);
                                             //var products = productService.GetAll();
                                             var jsonString = JsonConvert.SerializeObject(products);
                                             bw.Write(jsonString);
