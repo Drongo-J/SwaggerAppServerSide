@@ -1,168 +1,158 @@
 ﻿using App.Business.Concrete;
-using App.DataAccess.Concrete.EfEntityFramework;
-using App.Entities.Concrete;
 using Newtonsoft.Json;
 using System;
-using System.CodeDom;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using System.Xml.Linq;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace App.Server
 {
-    public class Program
+    class Program
     {
-        static TcpListener listener = null;
-        static BinaryWriter bw = null;
-        static BinaryReader br = null;
-        public static List<TcpClient> Clients { get; set; }
-        public static Type[] GetTypesInNamespace(Assembly assembly, string nameSpace)
+        private static readonly Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        private static readonly List<Socket> clientSockets = new List<Socket>();
+        private const int BUFFER_SIZE = 2048;
+        private const int PORT = 27001;
+        private static readonly byte[] buffer = new byte[BUFFER_SIZE];
+
+        static void Main()
         {
-            return
-              assembly.GetTypes()
-                      .Where(t => String.Equals(t.Namespace, nameSpace, StringComparison.Ordinal))
-                      .ToArray();
+            Console.Title = "Server";
+            SetupServer();
+            Console.ReadLine(); // When we press enter close everything
+            CloseAllSockets();
         }
-        static void Main(string[] args)
+
+        private static void SetupServer()
         {
+            Console.WriteLine("Setting up server...");
+            serverSocket.Bind(new IPEndPoint(IPAddress.Parse("10.2.11.19"), PORT));
+            serverSocket.Listen(0);
+            serverSocket.BeginAccept(AcceptCallback, null);
+            Console.WriteLine("Server setup complete");
+        }
 
-            Clients = new List<TcpClient>();
-            var ip = IPAddress.Parse("10.2.11.19");
-            var port = 27001;
-
-            var ep = new IPEndPoint(ip, port);
-            listener = new TcpListener(ep);
-            listener.Start();
-            string nspace = "App.Business.Concrete";
-            var productService = new ProductService(new EfProductDal());
-
-
-            Console.WriteLine($"Listening on {listener.LocalEndpoint}");
-            while (true)
+        /// <summary>
+        /// Close all connected client (we do not need to shutdown the server socket as its connections
+        /// are already closed with the clients).
+        /// </summary>
+        private static void CloseAllSockets()
+        {
+            foreach (Socket socket in clientSockets)
             {
-                var client = listener.AcceptTcpClient();
-                Clients.Add(client);
-                Console.WriteLine($"{client.Client.RemoteEndPoint}");
-                Task.Run(() =>
-                {
-                    var reader = Task.Run(() =>
-                    {
-                        foreach (var item in Clients)
-                        {
-                            Task.Run(() =>
-                            {
-                                while (true)
-                                {
-                                    try
-                                    {
-                                        var stream = item.GetStream();
-                                        br = new BinaryReader(stream);
-                                        bw = new BinaryWriter(stream);
-                                        var msg = br.ReadString();
-                                        Console.WriteLine($"CLIENT : {client.Client.RemoteEndPoint} : {msg}");
-                                        //Products/1
-
-                                        if (msg != String.Empty)
-                                        {
-                                            var className = msg.Split('\\')[0];
-                                            var methodName = msg.Split('\\')[1];
-                                            var myType = Assembly.GetAssembly(typeof(ProductService)).GetTypes()
-                                            .FirstOrDefault(a => a.FullName.Contains(className));
-
-                                            var methods = myType.GetMethods();
-                                            MethodInfo myMethod = myType.GetMethods()
-                                            .FirstOrDefault(m=>m.Name.Contains(methodName));
-
-                                            object myInstance = Activator.CreateInstance(myType);
-                                            var products = myMethod.Invoke(myInstance, null);
-                                            //var products = productService.GetAll();
-                                            var jsonString = JsonConvert.SerializeObject(products);
-                                            bw.Write(jsonString);
-                                        }
-                                        stream.Flush();
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Console.WriteLine($"{item.Client.RemoteEndPoint}  disconnected");
-                                        Clients.Remove(item);
-                                    }
-                                }
-                            }).Wait(50);
-                        }
-
-                        //var stream = client.GetStream();
-                        //br = new BinaryReader(stream);
-                        //bw = new BinaryWriter(stream);
-                        //while (true)
-                        //{
-                        //    try
-                        //    {
-
-                        //        //Products/1
-                        //        var msg = br.ReadString();
-                        //        Console.WriteLine($"CLIENT : {client.Client.RemoteEndPoint} : {msg}");
-                        //        if (msg == @"Product\Getlist")
-                        //        {
-                        //            var products = productService.GetAll();
-                        //            var jsonString = JsonConvert.SerializeObject(products);
-                        //            bw.Write(jsonString);
-
-                        //        }
-                        //    }
-                        //    catch (Exception ex)
-                        //    {
-                        //        Console.WriteLine(ex.Message);
-                        //    }
-                        //}
-                    });
-
-                    var writer = Task.Run(() =>
-                    {
-                        //var stream = client.GetStream();
-                        //bw = new BinaryWriter(stream);
-                        //while (true)
-                        //{
-                        //    var msg = Console.ReadLine();
-                        //    bw.Write(msg);
-                        //}
-
-                        while (true)
-                        {
-                            var msg = Console.ReadLine();
-                            foreach (var item in Clients)
-                            {
-                                var stream = item.GetStream();
-                                bw = new BinaryWriter(stream);
-                                bw.Write(msg);
-                            }
-                            foreach (var item in Clients)
-                            {
-                                if (item.Connected)
-                                {
-                                    Console.ForegroundColor = ConsoleColor.Green;
-                                }
-                                else
-                                {
-                                    Console.ForegroundColor = ConsoleColor.Red;
-                                }
-                                Console.WriteLine($"item : {item.Client.RemoteEndPoint}");
-                                Console.ResetColor();
-                            }
-                        }
-                    });
-                });
+                socket.Shutdown(SocketShutdown.Both);
+                socket.Close();
             }
+
+            serverSocket.Close();
+        }
+
+        private static void AcceptCallback(IAsyncResult AR)
+        {
+            Socket socket;
+
+            try
+            {
+                socket = serverSocket.EndAccept(AR);
+            }
+            catch (ObjectDisposedException) // I cannot seem to avoid this (on exit when properly closing sockets)
+            {
+                return;
+            }
+
+            clientSockets.Add(socket);
+            socket.BeginReceive(buffer, 0, BUFFER_SIZE, SocketFlags.None, ReceiveCallback, socket);
+            Console.WriteLine("Client connected, waiting for request...");
+            serverSocket.BeginAccept(AcceptCallback, null);
+        }
+
+        private static void ReceiveCallback(IAsyncResult AR)
+        {
+            Socket current = (Socket)AR.AsyncState;
+            int received;
+
+            try
+            {
+                received = current.EndReceive(AR);
+            }
+            catch (SocketException)
+            {
+                Console.WriteLine("Client forcefully disconnected");
+                // Don't shutdown because the socket may be disposed and its disconnected anyway.
+                current.Close();
+                clientSockets.Remove(current);
+                return;
+            }
+
+            byte[] recBuf = new byte[received];
+            Array.Copy(buffer, recBuf, received);
+            string msg = Encoding.ASCII.GetString(recBuf);
+            Console.WriteLine("Received Text: " + msg);
+            if (msg != String.Empty)
+            {
+                try
+                {
+
+                    var result = msg.Split('\\');
+                    var className = result[0];
+                    var methodName = result[1];
+                    var myType = Assembly.GetAssembly(typeof(ProductService)).GetTypes()
+                    .FirstOrDefault(a => a.FullName.Contains(className));
+
+                    var methods = myType.GetMethods();
+                    MethodInfo myMethod = myType.GetMethods()
+                    .FirstOrDefault(m => m.Name.Contains(methodName));
+
+                    object myInstance = Activator.CreateInstance(myType);
+
+
+                    var paramId = -1;
+                    var jsonString = String.Empty;
+                    object objectResponse = null;
+                    if (result.Length == 3)
+                    {
+                        paramId = int.Parse(result[2]);
+                        objectResponse = myMethod.Invoke(myInstance, new object[1] { paramId });
+                    }
+                    else
+                    {
+                        objectResponse = myMethod.Invoke(myInstance, null);
+                    }
+
+                    jsonString = JsonConvert.SerializeObject(objectResponse);
+                    byte[] data = Encoding.ASCII.GetBytes(jsonString);
+                    current.Send(data);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
+            }
+            else if (msg.ToLower() == "exit")
+            {
+                // Always Shutdown before closing
+                current.Shutdown(SocketShutdown.Both);
+                current.Close();
+                clientSockets.Remove(current);
+                Console.WriteLine("Client disconnected");
+                return;
+            }
+            else
+            {
+                Console.WriteLine("Query is an invalid request");
+                byte[] data = Encoding.ASCII.GetBytes("Invalid request");
+                current.Send(data);
+                Console.WriteLine("Warning Sent");
+            }
+
+            current.BeginReceive(buffer, 0, BUFFER_SIZE, SocketFlags.None, ReceiveCallback, current);
         }
     }
 }
-
 
 
