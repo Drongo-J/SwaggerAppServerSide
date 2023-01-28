@@ -1,4 +1,5 @@
 ﻿using App.Business.Concrete;
+using App.Entities.Concrete;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -97,36 +98,64 @@ namespace App.Server
             {
                 try
                 {
-
-                    var result = msg.Split('\\');
-                    var className = result[0];
-                    var methodName = result[1];
-                    var myType = Assembly.GetAssembly(typeof(ProductService)).GetTypes()
-                    .FirstOrDefault(a => a.FullName.Contains(className));
-
-                    var methods = myType.GetMethods();
-                    MethodInfo myMethod = myType.GetMethods()
-                    .FirstOrDefault(m => m.Name.Contains(methodName));
-
-                    object myInstance = Activator.CreateInstance(myType);
-
-
-                    var paramId = -1;
-                    var jsonString = String.Empty;
-                    object objectResponse = null;
-                    if (result.Length == 3)
+                    var result = msg.Split(new[] { ' ' }, 2);
+                    if (result.Length >= 2)
                     {
-                        paramId = int.Parse(result[2]);
-                        objectResponse = myMethod.Invoke(myInstance, new object[1] { paramId });
+                        var jsonPart=result[1];
+
+                        var subResult = result[0].Split('\\');
+                        var className = subResult[0];
+                        var methodName = subResult[1];
+                        var myType = Assembly.GetAssembly(typeof(ProductService)).GetTypes()
+                        .FirstOrDefault(a => a.FullName.Contains(className));
+
+                        var myEntitiesType = Assembly.GetAssembly(typeof(Product)).GetTypes()
+                        .FirstOrDefault(a => a.FullName.Contains(className));
+
+                        var obj = JsonConvert.DeserializeObject(jsonPart, myEntitiesType);
+
+                        var methods = myType.GetMethods();
+                        MethodInfo myMethod = myType.GetMethods()
+                        .FirstOrDefault(m => m.Name.Contains(methodName));
+
+                        object myInstance = Activator.CreateInstance(myType);
+                        myMethod.Invoke(myInstance, new object[1] { obj });
+                        byte[] data = Encoding.ASCII.GetBytes("Successfully POST Operation");
+                        current.Send(data);
                     }
                     else
                     {
-                        objectResponse = myMethod.Invoke(myInstance, null);
-                    }
 
-                    jsonString = JsonConvert.SerializeObject(objectResponse);
-                    byte[] data = Encoding.ASCII.GetBytes(jsonString);
-                    current.Send(data);
+                        result = msg.Split('\\');
+                        var className = result[0];
+                        var methodName = result[1];
+                        var myType = Assembly.GetAssembly(typeof(ProductService)).GetTypes()
+                        .FirstOrDefault(a => a.FullName.Contains(className));
+
+                        var methods = myType.GetMethods();
+                        MethodInfo myMethod = myType.GetMethods()
+                        .FirstOrDefault(m => m.Name.Contains(methodName));
+
+                        object myInstance = Activator.CreateInstance(myType);
+
+
+                        var paramId = -1;
+                        var jsonString = String.Empty;
+                        object objectResponse = null;
+                        if (result.Length == 3)
+                        {
+                            paramId = int.Parse(result[2]);
+                            objectResponse = myMethod.Invoke(myInstance, new object[1] { paramId });
+                        }
+                        else
+                        {
+                            objectResponse = myMethod.Invoke(myInstance, null);
+                        }
+
+                        jsonString = JsonConvert.SerializeObject(objectResponse);
+                        byte[] data = Encoding.ASCII.GetBytes(jsonString);
+                        current.Send(data);
+                    }
                 }
                 catch (Exception ex)
                 {
