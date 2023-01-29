@@ -32,7 +32,7 @@ namespace App.Server
         private static void SetupServer()
         {
             Console.WriteLine("Setting up server...");
-            serverSocket.Bind(new IPEndPoint(IPAddress.Parse("10.2.11.19"), PORT));
+            serverSocket.Bind(new IPEndPoint(IPAddress.Parse("10.2.13.15"), PORT));
             serverSocket.Listen(0);
             serverSocket.BeginAccept(AcceptCallback, null);
             Console.WriteLine("Server setup complete");
@@ -65,11 +65,53 @@ namespace App.Server
             {
                 return;
             }
-
+            SendServiceResponseToClient(socket);
             clientSockets.Add(socket);
             socket.BeginReceive(buffer, 0, BUFFER_SIZE, SocketFlags.None, ReceiveCallback, socket);
             Console.WriteLine("Client connected, waiting for request...");
             serverSocket.BeginAccept(AcceptCallback, null);
+        }
+
+        public static string GetAllServiceAsText()
+        {
+            var myTypes = Assembly.GetAssembly(typeof(ProductService)).GetTypes()
+                .Where(m => m.Name.EndsWith("Service") && !m.Name.StartsWith("I"));
+
+
+            var sb = new StringBuilder();
+            foreach (var type in myTypes)
+            {
+                var className = type.Name.Remove(type.Name.Length - 7, 7);
+                var methods = type.GetMethods().Reverse().Skip(4);
+                foreach (var m in methods)
+                {
+                    string responseText = $@"{className}\{m.Name}";
+                    var parameters = m.GetParameters();
+                    foreach (var p in parameters)
+                    {
+                        //p.ParameterType.IsClass
+                        if (p.ParameterType != typeof(string) && p.ParameterType.IsClass)
+                        {
+                            responseText += $@"\{p.Name}[json]";
+                        }
+                        else
+                        {
+                            responseText += $@"\{p.Name}";
+                        }
+                    }
+                    sb.AppendLine(responseText);
+                }
+            }
+
+            var result = sb.ToString();
+            return result;
+        }
+
+        private static void SendServiceResponseToClient(Socket client)
+        {
+            var result = GetAllServiceAsText();
+            byte[] data = Encoding.ASCII.GetBytes(result);
+            client.Send(data);
         }
 
         private static void ReceiveCallback(IAsyncResult AR)
@@ -101,7 +143,7 @@ namespace App.Server
                     var result = msg.Split(new[] { ' ' }, 2);
                     if (result.Length >= 2)
                     {
-                        var jsonPart=result[1];
+                        var jsonPart = result[1];
 
                         var subResult = result[0].Split('\\');
                         var className = subResult[0];
