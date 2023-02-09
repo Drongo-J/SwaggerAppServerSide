@@ -8,14 +8,17 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
-using static System.Net.Mime.MediaTypeNames;
+using System.IO;
+using Microsoft.SqlServer.Management.Common;
+using Microsoft.SqlServer.Management.Smo;
+using System.Data.SqlClient;
+using App.Server.Network;
 
 namespace App.Server
 {
     class Program
     {
-        private static readonly Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        private static readonly Socket serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
         private static readonly List<Socket> clientSockets = new List<Socket>();
         private const int BUFFER_SIZE = 2048;
         private const int PORT = 27001;
@@ -32,7 +35,7 @@ namespace App.Server
         private static void SetupServer()
         {
             Console.WriteLine("Setting up server...");
-            serverSocket.Bind(new IPEndPoint(IPAddress.Parse("10.2.13.15"), PORT));
+            serverSocket.Bind(new IPEndPoint(IPAddress.Parse(NetworkServices.GetLocalIpAddress()), PORT));
             serverSocket.Listen(0);
             serverSocket.BeginAccept(AcceptCallback, null);
             Console.WriteLine("Server setup complete");
@@ -192,6 +195,7 @@ namespace App.Server
                         else
                         {
                             objectResponse = myMethod.Invoke(myInstance, null);
+
                         }
 
                         jsonString = JsonConvert.SerializeObject(objectResponse);
